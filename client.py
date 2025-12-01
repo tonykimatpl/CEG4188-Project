@@ -6,6 +6,7 @@ import websocket  # websocket-client library
 import math
 import random
 
+# Game configuration constants
 BOARD_SIZE = 5  # Increased to 5x5
 CELL_SIZE = 80  # Adjusted for fit
 SIDEBAR_WIDTH = 200  # Space for stats on the side
@@ -15,6 +16,7 @@ ANIMATION_FPS = 60  # For smooth animation
 
 class GameClient:
     def __init__(self):
+        # WebSocket and communication setup
         self.ws = None
         self.message_queue = queue.Queue()
         self.player_id = None
@@ -69,6 +71,7 @@ class GameClient:
         # Main loop
         self.run()
 
+    # Method to initialize and run the WebSocket connection
     def start_websocket(self):
         self.ws = websocket.WebSocketApp("ws://localhost:8765",
                                          on_open=self.on_open,
@@ -77,18 +80,23 @@ class GameClient:
                                          on_close=self.on_close)
         self.ws.run_forever()
 
+    # WebSocket callback: Called when connection is opened
     def on_open(self, ws):
         pass
 
+    # WebSocket callback: Handles incoming messages and queues them
     def on_message(self, ws, message):
         self.message_queue.put(message)
 
+    # WebSocket callback: Handles errors and queues error message
     def on_error(self, ws, error):
         self.message_queue.put(json.dumps({"error": str(error)}))
 
+    # WebSocket callback: Handles connection closure
     def on_close(self, ws, close_status_code, close_msg):
         self.message_queue.put(json.dumps({"status": "Connection closed"}))
 
+    # Processes queued messages from the WebSocket
     def process_messages(self):
         try:
             while not self.message_queue.empty():
@@ -125,6 +133,7 @@ class GameClient:
             pass
         return False
 
+    # Main game loop
     def run(self):
         running = True
         while running:
@@ -162,6 +171,7 @@ class GameClient:
             self.ws.close()
         pygame.quit()
 
+    # Handles left mouse button down event for starting a cell hold
     def handle_mouse_down(self, event):
         if event.button == 1:  # Left click
             mx, my = event.pos
@@ -172,6 +182,7 @@ class GameClient:
                 self.hold_col = col
                 self.hold_progress = 0.0
 
+    # Handles left mouse button up event for attempting to claim a cell
     def handle_mouse_up(self, event):
         if event.button == 1 and self.hold_row is not None and self.hold_col is not None:
             mx, my = event.pos
@@ -181,6 +192,7 @@ class GameClient:
                 self.claim_sound.play()
             self.reset_hold()
 
+    # Converts mouse position to board row and column
     def get_cell_from_pos(self, x, y):
         offset_x, offset_y = 20, 60
         row = (y - offset_y) // CELL_SIZE
@@ -189,6 +201,7 @@ class GameClient:
             return row, col
         return None, None
 
+    # Renders the entire game screen
     def draw(self):
         # Gradient background
         for y in range(self.screen.get_height()):
@@ -272,6 +285,7 @@ class GameClient:
             alpha_color = (*particle['color'][:3], int(particle['alpha']))  # Apply alpha
             pygame.draw.circle(self.screen, alpha_color, (int(particle['x']), int(particle['y'])), int(particle['size']))
 
+    # Draws the winner celebration screen
     def draw_winner_screen(self):
         # Semi-transparent overlay
         overlay = pygame.Surface((self.screen.get_width(), self.screen.get_height()), pygame.SRCALPHA)
@@ -298,6 +312,7 @@ class GameClient:
         sub_rect = subtitle.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2 + 50))
         self.screen.blit(subtitle, sub_rect)
 
+    # Draws the leaderboard sidebar with player scores
     def draw_scores(self, x, y):
         title = self.font.render("Leaderboard", True, self.text_color)
         self.screen.blit(title, (x, y))
@@ -314,6 +329,7 @@ class GameClient:
             self.screen.blit(score_label, (x, y))
             y += 30
 
+    # Updates player scores based on the current board state
     def update_scores(self):
         self.player_scores = {'X': 0, 'O': 0, '△': 0}  # Reset
         for row in self.board:
@@ -321,12 +337,14 @@ class GameClient:
                 if cell != ' ':
                     self.player_scores[cell] += 1
 
+    # Resets the hold state variables
     def reset_hold(self):
         self.hold_start_time = None
         self.hold_row = None
         self.hold_col = None
         self.hold_progress = 0.0
 
+    # Creates victory particle effects for celebration
     def create_victory_particles(self, winner):
         self.victory_particles = []
         winner_color = self.colors.get(winner, (255, 255, 0))  # Default yellow if error
@@ -346,6 +364,7 @@ class GameClient:
                 'type': random.choice(['circle', 'star'])  # Variety: circles or stars
             })
 
+    # Updates the positions and properties of victory particles
     def update_particles(self):
         for particle in self.victory_particles[:]:
             particle['x'] += particle['vx']
@@ -357,5 +376,6 @@ class GameClient:
             if particle['life'] <= 0 or particle['y'] > self.screen.get_height() or particle['alpha'] <= 0:
                 self.victory_particles.remove(particle)
 
+# Entry point: Creates and runs the game client
 if __name__ == "__main__":
     GameClient()
