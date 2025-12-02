@@ -10,7 +10,7 @@ import random
 BOARD_SIZE = 5  # Increased to 5x5
 CELL_SIZE = 80  # Adjusted for fit
 SIDEBAR_WIDTH = 200  # Space for stats on the side
-WINDOW_SIZE = (BOARD_SIZE * CELL_SIZE + SIDEBAR_WIDTH + 40, BOARD_SIZE * CELL_SIZE + 300)  # Extra space for rules
+WINDOW_SIZE = (BOARD_SIZE * CELL_SIZE + SIDEBAR_WIDTH + 70, BOARD_SIZE * CELL_SIZE + 220)  # Extra space for rules
 HOLD_TIME_MS = 3000  # 3 seconds
 ANIMATION_FPS = 60  # For smooth animation
 
@@ -262,7 +262,7 @@ class GameClient:
             status = self.font.render(status_text, True, (255, 0, 0))
             self.screen.blit(status, (self.screen.get_width() // 2 - status.get_width() // 2 - SIDEBAR_WIDTH // 2, 10))
         elif not self.game_started:
-            status_text = f"Waiting for players ({len(self.connected_players)} connected)"
+            status_text = f"                                             Waiting for players ({len(self.connected_players)} connected)"
             status = self.font.render(status_text, True, (0, 0, 255))
             self.screen.blit(status, (self.screen.get_width() // 2 - status.get_width() // 2 - SIDEBAR_WIDTH // 2, 10))
 
