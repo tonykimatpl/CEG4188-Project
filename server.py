@@ -1,3 +1,4 @@
+# Updated Server Code
 import asyncio
 import websockets
 import json
@@ -15,6 +16,7 @@ board = None  # Will be initialized when game starts
 game_started = False
 game_over = False
 winner = None
+restart_votes = set()  # Set of websockets that have voted to restart
 
 # Lock for thread-safe access to shared state
 lock = asyncio.Lock()
@@ -29,7 +31,6 @@ async def broadcast(message):
 
 # Checks for a winner (row, column, diagonal) or tie (board full)
 def check_winner():
-    global winner
     # Check rows
     for row in board:
         if all(cell == row[0] and cell != ' ' for cell in row):
@@ -44,9 +45,8 @@ def check_winner():
     if all(board[i][BOARD_SIZE - 1 - i] == board[0][BOARD_SIZE - 1] and board[0][BOARD_SIZE - 1] != ' ' for i in range(BOARD_SIZE)):
         return board[0][BOARD_SIZE - 1]
     
-    # Check for tie: board full without winner
+    # Check for board full: determine winner by most cells or tie
     if all(cell != ' ' for row in board for cell in row):
-        # Count scores to determine winner by most cells
         scores = {'X': 0, 'O': 0, '△': 0}
         for row in board:
             for cell in row:
@@ -94,7 +94,13 @@ async def handler(websocket):
         if game_started:
             await websocket.send(json.dumps({"status": "Game started!", "board": board}))
             if game_over:
-                await websocket.send(json.dumps({"status": "game_over", "winner": winner}))
+                if winner:
+                    await websocket.send(json.dumps({"status": "game_over", "winner": winner}))
+                else:
+                    await websocket.send(json.dumps({"status": "game_over", "winner": "tie"}))
+            # Send current restart vote status if applicable
+            if game_over:
+                await websocket.send(json.dumps({"status": "restart_vote", "votes": len(restart_votes), "needed": len(connected)}))
 
         # Listen for messages from this player
         async for message in websocket:
@@ -114,8 +120,19 @@ async def handler(websocket):
                             game_over = True
                             await broadcast({"status": "game_over", "winner": winner})
                         elif all(cell != ' ' for row in board for cell in row):
-                            # Board full, already handled in check_winner
-                            pass
+                            game_over = True
+                            await broadcast({"status": "game_over", "winner": "tie"})
+            elif data.get("action") == "restart" and game_over:
+                async with lock:
+                    if websocket not in restart_votes:
+                        restart_votes.add(websocket)
+                        await broadcast({"status": "restart_vote", "votes": len(restart_votes), "needed": len(connected)})
+                        if len(restart_votes) >= len(connected):
+                            restart_votes.clear()
+                            board = [[' ' for _ in range(BOARD_SIZE)] for _ in range(BOARD_SIZE)]
+                            game_over = False
+                            winner = None
+                            await broadcast({"status": "game_restarted", "board": board})
 
     except websockets.ConnectionClosed:
         pass
@@ -124,10 +141,21 @@ async def handler(websocket):
             connected.discard(websocket)
             if websocket in players:
                 del players[websocket]
+            restart_votes.discard(websocket)
             
             # Update connected players
             connected_players = [{"id": p['id'], "symbol": p['symbol']} for p in players.values()]
             await broadcast({"connected_players": connected_players})
+            
+            # Update restart votes if game over
+            if game_over:
+                await broadcast({"status": "restart_vote", "votes": len(restart_votes), "needed": len(connected)})
+                if len(restart_votes) >= len(connected) and len(connected) >= 1:
+                    restart_votes.clear()
+                    board = [[' ' for _ in range(BOARD_SIZE)] for _ in range(BOARD_SIZE)]
+                    game_over = False
+                    winner = None
+                    await broadcast({"status": "game_restarted", "board": board})
             
             # If a player disconnects during game, abort if fewer than 2 players
             if game_started and not game_over and len(connected) < 2:
@@ -141,6 +169,7 @@ async def handler(websocket):
                 game_started = False
                 game_over = False
                 winner = None
+                restart_votes.clear()
 
 # Start the WebSocket server
 async def main():

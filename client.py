@@ -33,6 +33,9 @@ class GameClient:
         self.victory_particles = []
         self.player_scores = {'X': 0, 'O': 0, '△': 0}  # Initialize for all symbols
         self.pulse_time = 0  # For winner text animation
+        self.restart_votes = 0  # Track restart votes
+        self.votes_needed = 0  # Track votes needed for restart
+        self.has_voted = False  # Track if this player has voted
 
         # Colors
         self.colors = {'X': (255, 100, 100), 'O': (100, 100, 255), '△': (100, 255, 100)}  # Vibrant RGB
@@ -45,6 +48,9 @@ class GameClient:
         self.shadow_color = (0, 0, 0, 50)  # Semi-transparent black for shadows
         self.glow_color = (255, 255, 255, 100)  # Semi-transparent white for glow
         self.overlay_color = (0, 0, 0, 150)  # Semi-transparent black for winner overlay
+        self.button_color = (0, 200, 0)  # Green for restart button
+        self.button_hover_color = (0, 150, 0)  # Darker green on hover
+        self.button_text_color = (255, 255, 255)  # White text on button
 
         # Pygame setup
         pygame.init()
@@ -56,6 +62,9 @@ class GameClient:
         self.big_font = pygame.font.SysFont("Arial", 36, bold=True)
         self.small_font = pygame.font.SysFont("Arial", 18)
         self.winner_font = pygame.font.SysFont("Arial", 48, bold=True)  # New large font for winner screen
+
+        # Restart button rect (positioned below the board)
+        self.restart_button_rect = pygame.Rect(20, WINDOW_SIZE[1] - 200, 200, 50)  # Adjustable position
 
         # Load sounds with error handling
         try:
@@ -116,6 +125,7 @@ class GameClient:
 
                 if 'connected_players' in data:
                     self.connected_players = data['connected_players']
+                    self.votes_needed = len(self.connected_players)  # Update votes needed
 
                 if 'status' in data:
                     if data['status'] == 'Game started!':
@@ -131,9 +141,21 @@ class GameClient:
                         if self.winner == self.symbol:
                             self.create_victory_particles(self.winner)
                             self.victory_sound.play()  # Play victory sound for the local winner
+                        if self.winner == "tie":
+                            self.winner = None  # Treat tie as no winner
                     elif data['status'] == 'Game aborted: Player disconnected':
                         self.game_over = True
                         print("Game Aborted: Player disconnected.")
+                    elif data['status'] == 'restart_vote':
+                        self.restart_votes = data['votes']
+                        self.votes_needed = data['needed']
+                    elif data['status'] == 'game_restarted':
+                        self.game_over = False
+                        self.winner = None
+                        self.board = data['board']
+                        self.restart_votes = 0
+                        self.has_voted = False
+                        self.update_scores()
                     elif data['status'] == 'Connection closed':
                         return True  # Quit
         except queue.Empty:
@@ -155,10 +177,18 @@ class GameClient:
                     self.handle_mouse_down(event)
                 elif event.type == pygame.MOUSEBUTTONUP and not self.game_over and self.game_started:
                     self.handle_mouse_up(event)
+                elif event.type == pygame.MOUSEBUTTONDOWN and self.game_over:
+                    # Handle click on restart button
+                    mx, my = event.pos
+                    if self.restart_button_rect.collidepoint((mx, my)) and not self.has_voted:
+                        self.ws.send(json.dumps({"action": "restart"}))
+                        self.has_voted = True  # Prevent multiple votes
                 elif event.type == pygame.VIDEORESIZE:
                     self.screen = pygame.display.set_mode(event.size, pygame.RESIZABLE)
                     global WINDOW_SIZE
                     WINDOW_SIZE = event.size  # Update global size for particles
+                    # Update restart button position on resize
+                    self.restart_button_rect = pygame.Rect(20, WINDOW_SIZE[1] - 200, 200, 50)
 
             # Draw everything
             self.draw()
@@ -226,7 +256,7 @@ class GameClient:
         # Status (e.g., Waiting, Game Over, Aborted)
         if self.game_over:
             if self.winner is None:
-                status_text = "Game Aborted"
+                status_text = "Game Aborted" if self.restart_votes == 0 else "Game Over: It's a tie!"
             else:
                 status_text = "Game Over"
             status = self.font.render(status_text, True, (255, 0, 0))
@@ -299,6 +329,19 @@ class GameClient:
         # Draw winner screen if local player won
         if self.game_over and self.winner == self.symbol:
             self.draw_winner_screen()
+
+        # Draw restart button and vote status if game over
+        if self.game_over:
+            # Draw restart button
+            button_color = self.button_hover_color if self.restart_button_rect.collidepoint(pygame.mouse.get_pos()) else self.button_color
+            pygame.draw.rect(self.screen, button_color, self.restart_button_rect, border_radius=10)
+            button_text = self.font.render("Vote to Restart" if not self.has_voted else "Voted", True, self.button_text_color)
+            text_rect = button_text.get_rect(center=self.restart_button_rect.center)
+            self.screen.blit(button_text, text_rect)
+
+            # Draw vote status
+            vote_text = self.small_font.render(f"Restart Votes: {self.restart_votes}/{self.votes_needed}", True, self.text_color)
+            self.screen.blit(vote_text, (self.restart_button_rect.x, self.restart_button_rect.y - 30))
 
         # Draw victory particles (on top of everything)
         for particle in self.victory_particles:
