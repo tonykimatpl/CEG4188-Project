@@ -24,6 +24,14 @@ def check_winner(symbol):
         return True
     return False
 
+def count_scores():
+    scores = {'X': 0, 'O': 0, '△': 0}
+    for row in board:
+        for cell in row:
+            if cell != ' ':
+                scores[cell] += 1
+    return scores
+
 async def broadcast(message):
     # Send a message to all connected players, ignoring any failed sends
     for ws in list(players.keys()):
@@ -72,10 +80,19 @@ async def handler(websocket):
                     # Claim the square if it's available
                     board[row][col] = symbol
                     await broadcast({"status": "update", "board": board})
+                    
+                    # Check for line win first
                     if check_winner(symbol):
-                        # Check for a win after the move and announce if found
                         winner = symbol
                         await broadcast({"status": "game_over", "winner": symbol})
+                    else:
+                        # Check if board is full
+                        is_full = all(cell != ' ' for row in board for cell in row)
+                        if is_full:
+                            scores = count_scores()
+                            winner_symbol = max(scores, key=scores.get)
+                            winner = winner_symbol
+                            await broadcast({"status": "game_over", "winner": winner_symbol})
     finally:
         # Clean up on disconnect
         del players[websocket]
